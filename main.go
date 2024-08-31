@@ -29,7 +29,8 @@ func main() {
 	r.POST("/buylottery/:userID", req.BuyLottery)
 	r.POST("/cashin/:userID", req.CashIn)
 
-	r.POST("/randomlotterynumber", req.Random) //เฉพาะแอดมิน จริงๆไม่ได้เอาไปใช้ตอนโชว์ ใช้ผ่านการ run POSTMAN
+	//เฉพาะแอดมิน จริงๆไม่ได้เอาไปใช้ตอนโชว์ ใช้ผ่านการ run POSTMAN
+	r.POST("/randomlotterynumber", req.Random)
 
 	r.Run(":8090")
 }
