@@ -11,7 +11,7 @@ import (
 )
 
 func GetProfile(c *gin.Context) {
-	var customers []models.GetCustomer
+	var customers []models.GetDataCustomer
 
 	// ดึง userID จาก path parameter
 	userIDParam := c.Param("userID")
@@ -33,7 +33,7 @@ func GetProfile(c *gin.Context) {
 	defer rows.Close()
 
 	for rows.Next() {
-		var customer models.GetCustomer
+		var customer models.GetDataCustomer
 		if err := rows.Scan(&customer.UserID, &customer.UserName, &customer.UserBalance); err != nil {
 			log.Printf("Error scanning row: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})

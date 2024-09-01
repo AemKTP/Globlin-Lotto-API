@@ -9,11 +9,13 @@ import (
 	"time"
 
 	"github.com/AemKTP/Globlin-Lotto-API/db"
+	"github.com/AemKTP/Globlin-Lotto-API/models"
 	"github.com/gin-gonic/gin"
 )
 
 func RandomResult(c *gin.Context) {
 	const NumbersResult = 5
+
 	// รับค่า userID จาก URL parameter และแปลงเป็น int
 	userIDParam := c.Param("userID")
 	userID, err := strconv.Atoi(userIDParam)
@@ -24,8 +26,8 @@ func RandomResult(c *gin.Context) {
 	}
 
 	var userType int
-	queryLottery := `SELECT userID FROM users WHERE userID = ? AND userType = 1`
-	err = db.DB.QueryRow(queryLottery, userID).Scan(&userType)
+	queryUser := `SELECT userID FROM users WHERE userID = ? AND userType = 1`
+	err = db.DB.QueryRow(queryUser, userID).Scan(&userType)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
@@ -36,6 +38,7 @@ func RandomResult(c *gin.Context) {
 		return
 	}
 
+	// ลบข้อมูลจากตาราง winner
 	_, err = db.DB.Exec("TRUNCATE TABLE winner")
 	if err != nil {
 		log.Printf("Error deleting from winner table: %v", err)
@@ -43,7 +46,7 @@ func RandomResult(c *gin.Context) {
 		return
 	}
 
-	// 2. random lottery 5 รายการ
+	// สุ่มเลือก lottery 5 รายการ
 	rows, err := db.DB.Query("SELECT lotteryID FROM lottery")
 	if err != nil {
 		log.Printf("Error selecting lottery IDs: %v", err)
@@ -84,5 +87,25 @@ func RandomResult(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Random lottery results successful", "winnerLotteryIDs": selectedLotteryIDs})
+	// ดึงข้อมูลจากตาราง winner
+	var winners []models.Winner
+	rows, err = db.DB.Query("SELECT winnerID, lotteryID FROM winner ORDER BY winnerID ASC")
+	if err != nil {
+		log.Printf("Error selecting winners: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error selecting winners"})
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var winner models.Winner
+		if err := rows.Scan(&winner.WinnerID, &winner.LotteryID); err != nil {
+			log.Printf("Error scanning winner data: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error scanning winner data"})
+			return
+		}
+		winners = append(winners, winner)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Random lottery results successful", "winners": winners})
 }

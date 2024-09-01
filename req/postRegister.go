@@ -20,15 +20,11 @@ func Register(c *gin.Context) {
 	}
 
 	// ตรวจสอบข้อมูลที่ได้รับ
-	if user.UserName == "" || user.Pwd == "" || user.Pwdconfirm == "" || user.UserBalance <= 0 {
+	if user.UserName == "" || user.Pwd == "" || user.UserBalance <= 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "All fields are required"})
 		return
 	}
 
-	if user.Pwd != user.Pwdconfirm {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Passwords do not match"})
-		return
-	}
 	// Hash the password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Pwd), bcrypt.DefaultCost)
 	if err != nil {

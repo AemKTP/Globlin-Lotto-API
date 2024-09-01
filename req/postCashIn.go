@@ -55,11 +55,13 @@ func CashIn(c *gin.Context) {
 		return
 	}
 
-	// ตรวจสอบว่า user คนนี้มี lottery ใบนี้จริงมั้ย
+	// ตรวจสอบว่า user คนนี้มี lottery ใบนี้จริงมั้ย ผลลัพธ์ที่มี timestamp ล่าสุด
 	checklotteryquery := `	SELECT userID, lotteryID
 							FROM payment
 							WHERE payment.lotteryID = ?
-							AND transactionType = 1`
+							AND transactionType = 1
+							ORDER BY timestamp DESC
+							LIMIT 1`
 	var foundLotteryID int
 	err = db.DB.QueryRow(checklotteryquery, lotteryID).Scan(&userID, &foundLotteryID)
 	if err != nil {
@@ -151,6 +153,16 @@ func CashIn(c *gin.Context) {
 		return
 	}
 
+	// Select userBalance ใหม่หลังจากการซื้อ
+	var checkUserBalance int
+	queryUserBalance := `SELECT userBalance FROM users WHERE userID = ?`
+	err = db.DB.QueryRow(queryUserBalance, userID).Scan(&checkUserBalance)
+	if err != nil {
+		log.Printf("Error finding user balance: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error selecting user balance"})
+		return
+	}
+
 	// ส่งข้อความตอบกลับ
-	c.JSON(http.StatusOK, gin.H{"message": "Cash-in successful", "UserID": userID, "LotteryNumber": lottery.LotteryNumber, "Winner": winnerID, "WinnerPrize": winnerPrize})
+	c.JSON(http.StatusOK, gin.H{"message": "Cash-in successful", "UserID": userID, "LotteryNumber": lottery.LotteryNumber, "Winner": winnerID, "Remaining Wallet": checkUserBalance, "WinnerPrize": winnerPrize})
 }

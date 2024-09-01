@@ -20,3 +20,9 @@ type GetCustomer struct {
 	UserType    int    `json:"userType"`
 	UserBalance int64  `json:"userBalance"`
 }
+
+type GetDataCustomer struct {
+	UserID      int64  `json:"userID"`
+	UserName    string `json:"userName"`
+	UserBalance int64  `json:"userBalance"`
+}

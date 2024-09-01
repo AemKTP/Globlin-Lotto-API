@@ -1,9 +1,11 @@
 package req
 
 import (
+	"database/sql"
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/AemKTP/Globlin-Lotto-API/db"
@@ -12,46 +14,39 @@ import (
 )
 
 func BuyLottery(c *gin.Context) {
-	var lotterys models.GetLottery
+	var lotterys []models.GetLottery
 
 	// รับค่า userID จาก URL parameter และแปลงเป็น int
 	userIDParam := c.Param("userID")
 	userID, err := strconv.Atoi(userIDParam)
-
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid userID"})
 		return
 	}
 
-	// Bind JSON จาก request body ไปเก็บยังโครงสร้าง lotterys
+	// Bind JSON จาก request body ไปเก็บยังโครงสร้าง lotterys (แบบ array)
 	if err := c.ShouldBindJSON(&lotterys); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON provided"})
 		return
 	}
 
-	// ตรวจสอบข้อมูลที่ได้รับ
-	if lotterys.LotteryNumber == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "All fields are required"})
+	// ตรวจสอบว่ามีข้อมูลลอตเตอรี่ในรายการหรือไม่
+	if len(lotterys) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "At least one lottery number is required"})
 		return
 	}
 
-	// หา lotteryID จาก lotteryNumber
-	var lotteryID int
-	queryLottery := `SELECT lotteryID FROM lottery WHERE lotteryNumber = ?`
-	err = db.DB.QueryRow(queryLottery, lotterys.LotteryNumber).Scan(&lotteryID)
-	if err != nil {
-		log.Printf("Error finding lotteryID: %v", err)
-		c.JSON(http.StatusNotFound, gin.H{"error": "Lottery number not found"})
-		return
-	}
-
-	// Select userBalance จาก ID ที่ path param มา
+	// Select userBalance จาก userID
 	var userBalance int
 	queryUser := `SELECT userBalance FROM users WHERE userID = ?`
 	err = db.DB.QueryRow(queryUser, userID).Scan(&userBalance)
 	if err != nil {
-		log.Printf("Error finding user: %v", err)
-		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		if err == sql.ErrNoRows {
+			c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		} else {
+			log.Printf("Error finding user: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
+		}
 		return
 	}
 
@@ -61,55 +56,156 @@ func BuyLottery(c *gin.Context) {
 	err = db.DB.QueryRow(querySetting).Scan(&lotteryPrice)
 	if err != nil {
 		log.Printf("Error finding settings: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error Select lotteryPrice"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error selecting lotteryPrice"})
 		return
 	}
 
-	// เทียบว่า เงินในบัญชีมีพอสำหรับการซื้อ lottery มั้ย
-	if userBalance < lotteryPrice {
-		log.Printf("Insufficient balance: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Insufficient balance"})
+	// คำนวณยอดเงินรวมที่ต้องใช้ในการซื้อ
+	totalPrice := len(lotterys) * lotteryPrice
+
+	// เทียบว่าเงินในบัญชีมีพอสำหรับการซื้อทั้งหมดหรือไม่
+	if userBalance < totalPrice {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Insufficient balance for buying all lotteries"})
 		return
 	}
 
-	// Update userBalance หลังจากซื้อแล้ว / ง่ายๆ คือ คำนวณเงินที่ซื้อ lottery ไป
-	_, err = db.DB.Exec(`UPDATE users SET userBalance = userBalance - ? WHERE userID = ?`, lotteryPrice, userID)
+	// เตรียมข้อมูลสำหรับการซื้อและอัพเดทข้อมูล
+	timestamp := time.Now()
+	tx, err := db.DB.Begin() // เริ่ม transaction
 	if err != nil {
-		log.Printf("Error updating user balance: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error at Update userBalance"})
+		log.Printf("Error starting transaction: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error starting transaction"})
 		return
 	}
 
-	// print select NOW() in sql
-	queryNow := "SELECT NOW()"
-	var nowStr string
-	err = db.DB.QueryRow(queryNow).Scan(&nowStr)
+	// สร้าง map เพื่อเก็บ lotteryID และข้อมูลที่ซื้อสำเร็จ
+	lotteryIDMap := make(map[string]int)
+	lotteryNumbersOutstock := make([]string, 0)
+	purchasedLotteryNumbers := make([]string, 0)
+
+	// หา lotteryID ทั้งหมดในครั้งเดียว
+	lotteryNumbers := make([]string, len(lotterys))
+	for i, lottery := range lotterys {
+		lotteryNumbers[i] = lottery.LotteryNumber
+	}
+
+	// สร้าง placeholders สำหรับคำสั่ง SQL
+	placeholders := strings.Repeat("?,", len(lotteryNumbers)-1) + "?"
+
+	// ใช้ placeholders สำหรับคำสั่ง SQL
+	queryLotteryIDs := `SELECT lotteryNumber, lotteryID FROM lottery WHERE lotteryNumber IN (` + placeholders + `)`
+	rows, err := tx.Query(queryLotteryIDs, toInterfaceSlice(lotteryNumbers)...)
 	if err != nil {
-		log.Printf("Error finding now: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
+		tx.Rollback()
+		log.Printf("Error finding lotteryIDs: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error finding lotteryIDs"})
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var lotteryNumber string
+		var lotteryID int
+		if err := rows.Scan(&lotteryNumber, &lotteryID); err != nil {
+			tx.Rollback()
+			log.Printf("Error scanning lotteryID: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error scanning lotteryID"})
+			return
+		}
+		lotteryIDMap[lotteryNumber] = lotteryID
+	}
+
+	// สร้าง slice สำหรับเก็บข้อมูลที่จะ insert
+	var valueStrings []string
+	var valueArgs []interface{}
+
+	// ตรวจสอบว่า lotteryID นี้มีคนซื้อไปรึยัง
+	queryCheckLottery := `SELECT lotteryID FROM payment WHERE lotteryID = ?`
+	for _, lottery := range lotterys {
+		lotteryID, exists := lotteryIDMap[lottery.LotteryNumber]
+		if !exists {
+			lotteryNumbersOutstock = append(lotteryNumbersOutstock, lottery.LotteryNumber)
+			continue
+		}
+
+		var checkLottery int
+		err = tx.QueryRow(queryCheckLottery, lotteryID).Scan(&checkLottery)
+		if err == nil {
+			lotteryNumbersOutstock = append(lotteryNumbersOutstock, lottery.LotteryNumber)
+			continue
+		} else if err != sql.ErrNoRows {
+			tx.Rollback()
+			log.Printf("Error checking lotteryID: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
+			return
+		}
+
+		// เพิ่มข้อมูลลงใน slice สำหรับ Batch Insert
+		valueStrings = append(valueStrings, "(?, ?, ?, ?)")
+		valueArgs = append(valueArgs, userID, lotteryID, 1, timestamp)
+
+		// เพิ่ม lotteryNumber ลงใน slice ที่เก็บรายการที่ซื้อสำเร็จ
+		purchasedLotteryNumbers = append(purchasedLotteryNumbers, lottery.LotteryNumber)
+	}
+
+	// ทำการ Batch Insert
+	if len(valueStrings) > 0 {
+		stmt := `INSERT INTO payment (userID, lotteryID, transactionType, timestamp) VALUES ` + strings.Join(valueStrings, ",")
+		_, err := tx.Exec(stmt, valueArgs...)
+		if err != nil {
+			tx.Rollback()
+			log.Printf("Error inserting data into payment: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error inserting into payment"})
+			return
+		}
+	}
+
+	// อัพเดท userBalance หลังจากซื้อ
+	if len(purchasedLotteryNumbers) > 0 {
+		_, err = tx.Exec(`UPDATE users SET userBalance = userBalance - ? WHERE userID = ?`, len(purchasedLotteryNumbers)*lotteryPrice, userID)
+		if err != nil {
+			tx.Rollback()
+			log.Printf("Error updating user balance: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error updating userBalance"})
+			return
+		}
+	}
+
+	// ถ้าทุกอย่างผ่านไปได้ดี ก็ commit transaction
+	err = tx.Commit()
+	if err != nil {
+		log.Printf("Error committing transaction: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error committing transaction"})
 		return
 	}
 
-	now, err := time.Parse("2006-01-02 15:04:05", nowStr)
+	// Select userBalance ใหม่หลังจากการซื้อ
+	var checkUserBalance int
+	queryUserBalance := `SELECT userBalance FROM users WHERE userID = ?`
+	err = db.DB.QueryRow(queryUserBalance, userID).Scan(&checkUserBalance)
 	if err != nil {
-		log.Printf("Error parsing time: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
-		return
-	}
-	// log.Printf("Current time in Asia/Bangkok: %v", now)
-
-	// set now to timeset
-	timeset := now
-
-	// บันทึกข้อมูลลงในฐานข้อมูล เพิ่มข้อมูลลง payment
-	_, err = db.DB.Exec("INSERT INTO payment (userID, lotteryID, transactionType, timestamp) VALUES (?, ?, ?, ?)",
-		userID, lotteryID, 1, timeset)
-	if err != nil {
-		log.Printf("Error inserting data into database: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
+		log.Printf("Error finding user balance: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error selecting user balance"})
 		return
 	}
 
 	// ส่งข้อความตอบกลับ
-	c.JSON(http.StatusOK, gin.H{"message": "Buy Lottery successfully"})
+	response := gin.H{
+		"Purchased Lottery Numbers": purchasedLotteryNumbers,
+		"Remaining Wallet":          checkUserBalance,
+		"message":                   "Buy Lottery process completed",
+	}
+	if len(lotteryNumbersOutstock) > 0 {
+		response["Lottery Numbers OutStock"] = lotteryNumbersOutstock
+	}
+	c.JSON(http.StatusOK, response)
+}
+
+// Helper function to convert a slice of strings to a slice of interface{}
+func toInterfaceSlice(slice []string) []interface{} {
+	interfaceSlice := make([]interface{}, len(slice))
+	for i, v := range slice {
+		interfaceSlice[i] = v
+	}
+	return interfaceSlice
 }
