@@ -5,10 +5,10 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/AemKTP/Globlin-Lotto-API/db"
 	"github.com/AemKTP/Globlin-Lotto-API/models"
-	"github.com/AemKTP/Globlin-Lotto-API/utils"
 	"github.com/gin-gonic/gin"
 )
 
@@ -57,9 +57,9 @@ func CashIn(c *gin.Context) {
 
 	// ตรวจสอบว่า user คนนี้มี lottery ใบนี้จริงมั้ย
 	checklotteryquery := `	SELECT userID, lotteryID
-	FROM payment
-	WHERE payment.lotteryID = ?
-	AND transactionType = 1`
+							FROM payment
+							WHERE payment.lotteryID = ?
+							AND transactionType = 1`
 	var foundLotteryID int
 	err = db.DB.QueryRow(checklotteryquery, lotteryID).Scan(&userID, &foundLotteryID)
 	if err != nil {
@@ -121,7 +121,26 @@ func CashIn(c *gin.Context) {
 		return
 	}
 
-	timeset := utils.GetBangkokTimestamp()
+	// print select NOW() in sql
+	queryNow := "SELECT NOW()"
+	var nowStr string
+	err = db.DB.QueryRow(queryNow).Scan(&nowStr)
+	if err != nil {
+		log.Printf("Error finding now: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
+		return
+	}
+
+	now, err := time.Parse("2006-01-02 15:04:05", nowStr)
+	if err != nil {
+		log.Printf("Error parsing time: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
+		return
+	}
+	// log.Printf("Current time in Asia/Bangkok: %v", now)
+
+	// set now to timeset
+	timeset := now
 
 	// อัพเดท transactionType และเวลา
 	_, err = db.DB.Exec(`UPDATE payment SET transactionType = ?, timestamp = ? WHERE lotteryID = ? AND userID = ? AND transactionType = 1`,

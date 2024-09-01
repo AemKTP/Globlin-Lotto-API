@@ -4,10 +4,10 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/AemKTP/Globlin-Lotto-API/db"
 	"github.com/AemKTP/Globlin-Lotto-API/models"
-	"github.com/AemKTP/Globlin-Lotto-API/utils"
 	"github.com/gin-gonic/gin"
 )
 
@@ -80,7 +80,26 @@ func BuyLottery(c *gin.Context) {
 		return
 	}
 
-	timeset := utils.GetBangkokTimestamp()
+	// print select NOW() in sql
+	queryNow := "SELECT NOW()"
+	var nowStr string
+	err = db.DB.QueryRow(queryNow).Scan(&nowStr)
+	if err != nil {
+		log.Printf("Error finding now: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
+		return
+	}
+
+	now, err := time.Parse("2006-01-02 15:04:05", nowStr)
+	if err != nil {
+		log.Printf("Error parsing time: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
+		return
+	}
+	// log.Printf("Current time in Asia/Bangkok: %v", now)
+
+	// set now to timeset
+	timeset := now
 
 	// บันทึกข้อมูลลงในฐานข้อมูล เพิ่มข้อมูลลง payment
 	_, err = db.DB.Exec("INSERT INTO payment (userID, lotteryID, transactionType, timestamp) VALUES (?, ?, ?, ?)",

@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/AemKTP/Globlin-Lotto-API/db"
@@ -91,14 +92,21 @@ func ResetSystem(c *gin.Context) {
 		numbersSlice = append(numbersSlice, num)
 	}
 
+	// Batch insert
+	valueStrings := make([]string, 0, len(numbersSlice))
+	valueArgs := make([]interface{}, 0, len(numbersSlice))
 	for _, num := range numbersSlice {
-		_, err := db.DB.Exec("INSERT INTO lottery (lotteryNumber) VALUES (?)", num)
-		if err != nil {
-			log.Printf("Error inserting user into database: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
-			return
-		}
+		valueStrings = append(valueStrings, "(?)")
+		valueArgs = append(valueArgs, num)
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Reset System Successfull", "lotteryNumbers": numbersSlice})
+	stmt := fmt.Sprintf("INSERT INTO lottery (lotteryNumber) VALUES %s", strings.Join(valueStrings, ","))
+	_, err = db.DB.Exec(stmt, valueArgs...)
+	if err != nil {
+		log.Printf("Error inserting lottery numbers into database: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Reset System Successful", "lotteryNumbers": numbersSlice})
 }

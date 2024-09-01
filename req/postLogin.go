@@ -44,5 +44,5 @@ func Login(c *gin.Context) {
 	}
 
 	// ส่ง response กลับไปเมื่อการล็อกอินสำเร็จ
-	c.JSON(http.StatusOK, gin.H{"message": "Login successful", "userID": storedUser.UserID, "userName": storedUser.UserName})
+	c.JSON(http.StatusOK, gin.H{"message": "Login successful", "user": storedUser})
 }

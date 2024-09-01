@@ -21,7 +21,7 @@ func GetProfile(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid userID"})
 		return
 	}
-	query := `SELECT userID, userName, userType, userBalance
+	query := `SELECT userID, userName, userBalance
 			  FROM users
 			  WHERE userID = ?`
 	rows, err := db.DB.Query(query, userID)
@@ -34,7 +34,7 @@ func GetProfile(c *gin.Context) {
 
 	for rows.Next() {
 		var customer models.GetCustomer
-		if err := rows.Scan(&customer.UserID, &customer.UserName, &customer.UserType, &customer.UserBalance); err != nil {
+		if err := rows.Scan(&customer.UserID, &customer.UserName, &customer.UserBalance); err != nil {
 			log.Printf("Error scanning row: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
 			return
