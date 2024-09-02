@@ -1,6 +1,10 @@
 package models
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/dgrijalva/jwt-go"
+)
 
 func UnmarshalGetCustomer(data []byte) (GetCustomer, error) {
 	var r GetCustomer
@@ -25,4 +29,10 @@ type GetDataCustomer struct {
 	UserID      int64  `json:"userID"`
 	UserName    string `json:"userName"`
 	UserBalance int64  `json:"userBalance"`
+}
+type GetLoginCustomer struct {
+	UserID   int64  `json:"userID"`
+	UserName string `json:"userName"`
+	UserType int    `json:"userType"`
+	jwt.StandardClaims
 }
