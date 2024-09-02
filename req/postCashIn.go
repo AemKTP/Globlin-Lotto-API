@@ -62,17 +62,27 @@ func CashIn(c *gin.Context) {
 							AND transactionType = 1
 							ORDER BY timestamp DESC
 							LIMIT 1`
+
 	var foundLotteryID int
-	err = db.DB.QueryRow(checklotteryquery, lotteryID).Scan(&userID, &foundLotteryID)
+	var ownerUserID int
+	err = db.DB.QueryRow(checklotteryquery, lotteryID).Scan(&ownerUserID, &foundLotteryID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			// ไม่พบข้อมูลที่ตรงกับเงื่อนไข
 			c.JSON(http.StatusNotFound, gin.H{"error": "Lottery not found for this user"})
+			return
 		} else {
 			// เกิดข้อผิดพลาดอื่น ๆ
 			log.Printf("Error querying database: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error1"})
+			return
 		}
+	}
+
+	// ตรวจสอบว่าผู้ที่ส่งคำขอเป็นเจ้าของลอตเตอรี่หรือไม่
+	if ownerUserID != userID {
+		// ถ้า userID ไม่ตรงกัน แสดงว่าไม่ใช่เจ้าของลอตเตอรี่ใบนี้
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "This lottery does not belong to the user"})
 		return
 	}
 
