@@ -12,13 +12,13 @@ func main() {
 
 	r := gin.Default()
 
-	r.GET("/lotteries", res.GetLotterys)
-	r.GET("/canbuylotteries", res.GetCanBuyLotteries)
-	r.GET("/MyLottery/:userID", res.GetMyLottery)
-	r.GET("/profile/:userID", res.GetProfile)
-	r.GET("/lotteriesSearch/:lotterynumber", res.GetlotteriesSearch)
-	r.GET("/CheckLotteryResult/:lotteryResult", res.GetCheckLotteryResult)
-	r.GET("/AllLotteryResult/", res.GETAllLotteryResults) // lottery ที่ออกรางวัล
+	r.GET("/lotteries", res.GetLotterys)                                   // show lottery
+	r.GET("/canbuylotteries", res.GetCanBuyLotteries)                      // lottery ที่สามารถซื้อได้
+	r.GET("/MyLottery/:userID", res.GetMyLottery)                          // MyLottery
+	r.GET("/profile/:userID", res.GetProfile)                              // Myprofile
+	r.GET("/lotteriesSearch/:lotterynumber", res.GetlotteriesSearch)       // Search lottery Number
+	r.GET("/CheckLotteryResult/:lotteryResult", res.GetCheckLotteryResult) // Check Award Number
+	r.GET("/AllLotteryResult/", res.GETAllLotteryResults)                  // lottery ที่ออกรางวัล
 
 	// Admin
 	r.GET("/users", res.GetUsers)
