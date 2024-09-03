@@ -29,6 +29,7 @@ type GetDataCustomer struct {
 	UserID      int64  `json:"userID"`
 	UserName    string `json:"userName"`
 	UserBalance int64  `json:"userBalance"`
+	jwt.StandardClaims
 }
 type GetLoginCustomer struct {
 	UserID   int64  `json:"userID"`

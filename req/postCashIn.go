@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"log"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/AemKTP/Globlin-Lotto-API/db"
@@ -15,11 +14,17 @@ import (
 func CashIn(c *gin.Context) {
 	var lottery models.GetLottery
 
-	// ดึง userID จาก path parameter
-	userIDParam := c.Param("userID")
-	userID, err := strconv.Atoi(userIDParam) // แปลง userID เป็น int
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid userID"})
+	// ดึง userID จาก context
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID not found in token"})
+		return
+	}
+
+	// แปลง userID เป็น int64
+	userIDInt, ok := userID.(int64)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "User ID type assertion failed"})
 		return
 	}
 
@@ -32,7 +37,7 @@ func CashIn(c *gin.Context) {
 	// หา lotteryID จาก lotteryNumber ที่ส่งมาจาก body
 	var lotteryID int
 	queryLottery := `SELECT lotteryID FROM lottery WHERE lotteryNumber = ?`
-	err = db.DB.QueryRow(queryLottery, lottery.LotteryNumber).Scan(&lotteryID)
+	err := db.DB.QueryRow(queryLottery, lottery.LotteryNumber).Scan(&lotteryID)
 	if err != nil {
 		log.Printf("Error finding lotteryID: %v", err)
 		c.JSON(http.StatusNotFound, gin.H{"error": "Lottery number not found"})
@@ -42,46 +47,32 @@ func CashIn(c *gin.Context) {
 	// ยอดเงินในบัญชี
 	var userBalance int
 	queryUser := `SELECT userBalance FROM users WHERE userID = ?`
-	err = db.DB.QueryRow(queryUser, userID).Scan(&userBalance)
+	err = db.DB.QueryRow(queryUser, userIDInt).Scan(&userBalance)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			// ไม่พบผู้ใช้ในระบบ
 			c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 		} else {
-			// ข้อผิดพลาดในการค้นหา
 			log.Printf("Error finding user: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error finding user"})
 		}
 		return
 	}
 
-	// ตรวจสอบว่า user คนนี้มี lottery ใบนี้จริงมั้ย ผลลัพธ์ที่มี timestamp ล่าสุด
-	checklotteryquery := `	SELECT userID, lotteryID
-							FROM payment
-							WHERE payment.lotteryID = ?
-							AND transactionType = 1
-							ORDER BY timestamp DESC
-							LIMIT 1`
-
-	var foundLotteryID int
+	// ตรวจสอบว่าผู้ใช้คนนี้มี lottery ใบนี้จริงหรือไม่
+	checklotteryquery := `SELECT userID FROM payment WHERE lotteryID = ? AND transactionType = 1 ORDER BY timestamp DESC LIMIT 1`
 	var ownerUserID int
-	err = db.DB.QueryRow(checklotteryquery, lotteryID).Scan(&ownerUserID, &foundLotteryID)
+	err = db.DB.QueryRow(checklotteryquery, lotteryID).Scan(&ownerUserID)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			// ไม่พบข้อมูลที่ตรงกับเงื่อนไข
 			c.JSON(http.StatusNotFound, gin.H{"error": "Lottery not found for this user"})
 			return
-		} else {
-			// เกิดข้อผิดพลาดอื่น ๆ
-			log.Printf("Error querying database: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error1"})
-			return
 		}
+		log.Printf("Error querying database: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error querying lottery"})
+		return
 	}
 
-	// ตรวจสอบว่าผู้ที่ส่งคำขอเป็นเจ้าของลอตเตอรี่หรือไม่
-	if ownerUserID != userID {
-		// ถ้า userID ไม่ตรงกัน แสดงว่าไม่ใช่เจ้าของลอตเตอรี่ใบนี้
+	if ownerUserID != int(userIDInt) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "This lottery does not belong to the user"})
 		return
 	}
@@ -92,71 +83,44 @@ func CashIn(c *gin.Context) {
 	err = db.DB.QueryRow(queryCheckLottery, lotteryID).Scan(&winnerID)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			// ไม่พบผลลัพธ์ของหวย
 			c.JSON(http.StatusNotFound, gin.H{"error": "Sorry, you didn't win the prize."})
 		} else {
-			// ข้อผิดพลาดในการค้นหา
 			log.Printf("Error finding lottery result: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error finding lottery result"})
 		}
 		return
 	}
+
 	// ตรวจสอบและดึงราคาของรางวัลจากตาราง settings
 	var winnerPrize int
-	switch winnerID {
-	case 1:
-		err = db.DB.QueryRow(`SELECT winnerPrize1 FROM settings`).Scan(&winnerPrize)
-	case 2:
-		err = db.DB.QueryRow(`SELECT winnerPrize2 FROM settings`).Scan(&winnerPrize)
-	case 3:
-		err = db.DB.QueryRow(`SELECT winnerPrize3 FROM settings`).Scan(&winnerPrize)
-	case 4:
-		err = db.DB.QueryRow(`SELECT winnerPrize4 FROM settings`).Scan(&winnerPrize)
-	case 5:
-		err = db.DB.QueryRow(`SELECT winnerPrize5 FROM settings`).Scan(&winnerPrize)
-	default:
-		c.JSON(http.StatusNotFound, gin.H{"error": "Invalid winnerID"})
-		return
-	}
-
+	prizeQuery := `SELECT CASE ? 
+		WHEN 1 THEN winnerPrize1
+		WHEN 2 THEN winnerPrize2
+		WHEN 3 THEN winnerPrize3
+		WHEN 4 THEN winnerPrize4
+		WHEN 5 THEN winnerPrize5
+	END FROM settings`
+	err = db.DB.QueryRow(prizeQuery, winnerID).Scan(&winnerPrize)
 	if err != nil {
 		log.Printf("Error finding settings: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error Select lotteryPrice"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error selecting winner prize"})
 		return
 	}
 
 	// Update เงินให้ user ตามที่ชนะ
-	_, err = db.DB.Exec(`UPDATE users SET userBalance = userBalance + ? WHERE userID = ?`, winnerPrize, userID)
+	_, err = db.DB.Exec(`UPDATE users SET userBalance = userBalance + ? WHERE userID = ?`, winnerPrize, userIDInt)
 	if err != nil {
 		log.Printf("Error updating user balance: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error at Update userBalance"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error updating user balance"})
 		return
 	}
 
-	// print select NOW() in sql
-	queryNow := "SELECT NOW()"
-	var nowStr string
-	err = db.DB.QueryRow(queryNow).Scan(&nowStr)
-	if err != nil {
-		log.Printf("Error finding now: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
-		return
-	}
-
-	now, err := time.Parse("2006-01-02 15:04:05", nowStr)
-	if err != nil {
-		log.Printf("Error parsing time: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
-		return
-	}
-	// log.Printf("Current time in Asia/Bangkok: %v", now)
-
-	// set now to timeset
-	timeset := now
+	// ใช้เวลาในปัจจุบันจาก Go แทนการ query ฐานข้อมูล
+	now := time.Now()
 
 	// อัพเดท transactionType และเวลา
 	_, err = db.DB.Exec(`UPDATE payment SET transactionType = ?, timestamp = ? WHERE lotteryID = ? AND userID = ? AND transactionType = 1`,
-		2, timeset, lotteryID, userID)
+		2, now, lotteryID, userIDInt)
 	if err != nil {
 		log.Printf("Error updating payment data: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error updating payment data"})
@@ -166,7 +130,7 @@ func CashIn(c *gin.Context) {
 	// Select userBalance ใหม่หลังจากการซื้อ
 	var checkUserBalance int
 	queryUserBalance := `SELECT userBalance FROM users WHERE userID = ?`
-	err = db.DB.QueryRow(queryUserBalance, userID).Scan(&checkUserBalance)
+	err = db.DB.QueryRow(queryUserBalance, userIDInt).Scan(&checkUserBalance)
 	if err != nil {
 		log.Printf("Error finding user balance: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error selecting user balance"})
@@ -174,5 +138,12 @@ func CashIn(c *gin.Context) {
 	}
 
 	// ส่งข้อความตอบกลับ
-	c.JSON(http.StatusOK, gin.H{"message": "Cash-in successful", "UserID": userID, "LotteryNumber": lottery.LotteryNumber, "Winner": winnerID, "Remaining Wallet": checkUserBalance, "WinnerPrize": winnerPrize})
+	c.JSON(http.StatusOK, gin.H{
+		"message":          "Cash-in successful",
+		"UserID":           userIDInt,
+		"LotteryNumber":    lottery.LotteryNumber,
+		"Winner":           winnerID,
+		"Remaining Wallet": checkUserBalance,
+		"WinnerPrize":      winnerPrize,
+	})
 }

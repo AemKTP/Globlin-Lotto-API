@@ -6,7 +6,6 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -20,19 +19,24 @@ func ResetSystem(c *gin.Context) {
 	const numberOfNumbers = 100
 	var user models.GetCustomer
 
-	// รับค่า userID จาก URL parameter และแปลงเป็น int
-	userIDParam := c.Param("userID")
-	userID, err := strconv.Atoi(userIDParam)
-
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid userID"})
+	// ดึง userID จาก context
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID not found in token"})
 		return
 	}
 
-	// ถ้า Type ไม่ = 1 ก็ให้ return กลับไป
+	// แปลง userID เป็น int64
+	userIDInt, ok := userID.(int64)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "User ID type assertion failed"})
+		return
+	}
+
+	// ตรวจสอบประเภทผู้ใช้
 	var userType int
-	queryLottery := `SELECT userID FROM users WHERE userID = ? AND userType = 1`
-	err = db.DB.QueryRow(queryLottery, userID).Scan(&userType)
+	queryUser := `SELECT userType FROM users WHERE userID = ?`
+	err := db.DB.QueryRow(queryUser, userIDInt).Scan(&userType)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
@@ -43,18 +47,32 @@ func ResetSystem(c *gin.Context) {
 		return
 	}
 
-	// Delete Table
+	if userType != 1 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	// เริ่มต้น Transaction
+	tx, err := db.DB.Begin()
+	if err != nil {
+		log.Printf("Error starting transaction: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error starting transaction"})
+		return
+	}
+	defer tx.Rollback()
+
+	// ลบข้อมูลจากตาราง
 	tables := []string{"payment", "winner", "users", "lottery"}
 	for _, table := range tables {
-		_, err = db.DB.Exec(fmt.Sprintf("DELETE FROM %s", table))
+		_, err = tx.Exec(fmt.Sprintf("DELETE FROM %s", table))
 		if err != nil {
 			log.Printf("Error deleting from %s table: %v", table, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Internal server error deleting from %s table", table)})
 			return
 		}
 
-		// Reset AUTO_INCREMENT
-		_, err = db.DB.Exec(fmt.Sprintf("ALTER TABLE %s AUTO_INCREMENT = 1", table))
+		// รีเซ็ต AUTO_INCREMENT
+		_, err = tx.Exec(fmt.Sprintf("ALTER TABLE %s AUTO_INCREMENT = 1", table))
 		if err != nil {
 			log.Printf("Error resetting AUTO_INCREMENT for %s table: %v", table, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Internal server error resetting AUTO_INCREMENT for %s table", table)})
@@ -62,20 +80,18 @@ func ResetSystem(c *gin.Context) {
 		}
 	}
 
-	// Create Admin
+	// สร้างผู้ดูแลระบบ
 	user.UserName = "goblin123"
 	user.Pwd = "$2a$10$/DCkF0KFmQuUkpQwS7i6o./pHZSKgazJa0GlcPtuwMhaxlEERsiv."
 	user.UserType = 1
 
 	// บันทึกข้อมูลลงในฐานข้อมูล
-	_, err = db.DB.Exec("INSERT INTO users (userName, userPwd, userType) VALUES (?, ?, ?)", user.UserName, user.Pwd, user.UserType)
+	_, err = tx.Exec("INSERT INTO users (userName, userPwd, userType) VALUES (?, ?, ?)", user.UserName, user.Pwd, user.UserType)
 	if err != nil {
 		log.Printf("Error inserting user into database: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
 		return
 	}
-
-	// log.Printf("userName: %s, userPwd: %s, userType: %d", user.UserName, user.Pwd, user.UserType)
 
 	// Random lottery
 	lotteryNumbers := make(map[string]struct{})
@@ -101,10 +117,17 @@ func ResetSystem(c *gin.Context) {
 	}
 
 	stmt := fmt.Sprintf("INSERT INTO lottery (lotteryNumber) VALUES %s", strings.Join(valueStrings, ","))
-	_, err = db.DB.Exec(stmt, valueArgs...)
+	_, err = tx.Exec(stmt, valueArgs...)
 	if err != nil {
 		log.Printf("Error inserting lottery numbers into database: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
+		return
+	}
+
+	// Commit transaction
+	if err := tx.Commit(); err != nil {
+		log.Printf("Error committing transaction: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error committing transaction"})
 		return
 	}
 

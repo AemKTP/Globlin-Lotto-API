@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"log"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -16,11 +15,17 @@ import (
 func BuyLottery(c *gin.Context) {
 	var lotterys []models.GetLottery
 
-	// รับค่า userID จาก URL parameter และแปลงเป็น int
-	userIDParam := c.Param("userID")
-	userID, err := strconv.Atoi(userIDParam)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid userID"})
+	// ดึง userID จาก context
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID not found in token"})
+		return
+	}
+
+	// แปลง userID เป็น int64
+	userIDInt, ok := userID.(int64)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "User ID type assertion failed"})
 		return
 	}
 
@@ -39,7 +44,7 @@ func BuyLottery(c *gin.Context) {
 	// Select userBalance จาก userID
 	var userBalance int
 	queryUser := `SELECT userBalance FROM users WHERE userID = ?`
-	err = db.DB.QueryRow(queryUser, userID).Scan(&userBalance)
+	err := db.DB.QueryRow(queryUser, userIDInt).Scan(&userBalance)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
@@ -142,7 +147,7 @@ func BuyLottery(c *gin.Context) {
 
 		// เพิ่มข้อมูลลงใน slice สำหรับ Batch Insert
 		valueStrings = append(valueStrings, "(?, ?, ?, ?)")
-		valueArgs = append(valueArgs, userID, lotteryID, 1, timestamp)
+		valueArgs = append(valueArgs, userIDInt, lotteryID, 1, timestamp)
 
 		// เพิ่ม lotteryNumber ลงใน slice ที่เก็บรายการที่ซื้อสำเร็จ
 		purchasedLotteryNumbers = append(purchasedLotteryNumbers, lottery.LotteryNumber)
@@ -162,7 +167,7 @@ func BuyLottery(c *gin.Context) {
 
 	// อัพเดท userBalance หลังจากซื้อ
 	if len(purchasedLotteryNumbers) > 0 {
-		_, err = tx.Exec(`UPDATE users SET userBalance = userBalance - ? WHERE userID = ?`, len(purchasedLotteryNumbers)*lotteryPrice, userID)
+		_, err = tx.Exec(`UPDATE users SET userBalance = userBalance - ? WHERE userID = ?`, len(purchasedLotteryNumbers)*lotteryPrice, userIDInt)
 		if err != nil {
 			tx.Rollback()
 			log.Printf("Error updating user balance: %v", err)
@@ -182,7 +187,7 @@ func BuyLottery(c *gin.Context) {
 	// Select userBalance ใหม่หลังจากการซื้อ
 	var checkUserBalance int
 	queryUserBalance := `SELECT userBalance FROM users WHERE userID = ?`
-	err = db.DB.QueryRow(queryUserBalance, userID).Scan(&checkUserBalance)
+	err = db.DB.QueryRow(queryUserBalance, userIDInt).Scan(&checkUserBalance)
 	if err != nil {
 		log.Printf("Error finding user balance: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error selecting user balance"})

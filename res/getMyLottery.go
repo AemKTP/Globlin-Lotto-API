@@ -3,7 +3,6 @@ package res
 import (
 	"log"
 	"net/http"
-	"strconv"
 
 	"github.com/AemKTP/Globlin-Lotto-API/db"
 	"github.com/AemKTP/Globlin-Lotto-API/models"
@@ -12,21 +11,28 @@ import (
 
 func GetMyLottery(c *gin.Context) {
 	var lotterys []models.GetLottery
-	userIDParam := c.Param("userID")
-	userID, err := strconv.Atoi(userIDParam)
 
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid userID"})
+	// ดึง userID จาก context
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID not found in token"})
 		return
 	}
-	query := `SELECT 	lottery.lotteryID, lottery.lotteryNumber
-			  FROM 		lottery
-			  LEFT 		JOIN payment ON lottery.lotteryID = payment.lotteryID
-			  WHERE 	payment.UserID = ?
-			  AND		payment.transactionType = 1
-			  ORDER BY 	lottery.lotteryID ASC`
 
-	rows, err := db.DB.Query(query, userID)
+	// แปลง userID เป็น int
+	userIDInt, ok := userID.(int64)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "User ID type assertion failed"})
+		return
+	}
+	query := `SELECT lottery.lotteryID, lottery.lotteryNumber
+			  FROM lottery
+			  LEFT JOIN payment ON lottery.lotteryID = payment.lotteryID
+			  WHERE payment.UserID = ?
+			  AND payment.transactionType = 1
+			  ORDER BY lottery.lotteryID ASC`
+
+	rows, err := db.DB.Query(query, userIDInt)
 	if err != nil {
 		log.Printf("Error querying database: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error1"})
@@ -50,5 +56,5 @@ func GetMyLottery(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"userID": userID, "lottery": lotterys})
+	c.JSON(http.StatusOK, gin.H{"lottery": lotterys})
 }

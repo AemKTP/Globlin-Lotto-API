@@ -29,31 +29,35 @@ func main() {
 	db.Init()
 
 	r := gin.Default()
-	// ใช้ middleware สำหรับเส้นทางที่ต้องการ JWT
-	authorized := r.Group("", middleware.AuthenticateJWT(JWTKey))
-	{
-		authorized.GET("/profile/:userID", res.GetProfile)
-		// เพิ่มเส้นทางอื่นๆ ที่ต้องการ JWT ที่นี่
-	}
+
+	// ใช้ middleware สำหรับเส้นทางที่ต้องการ JWT กรณีที่มี Path ที่อยากให้ใช้ JWT
+	// authorized := r.Group("", middleware.AuthenticateJWT(JWTKey))
+	// {
+	// r.GET("/profile/:userID", res.GetProfile)
+	// 	// เพิ่มเส้นทางอื่นๆ ที่ต้องการ JWT ที่นี่
+	// }
 
 	r.GET("/lotteries", res.GetLotterys)
 	r.GET("/canbuylotteries", res.GetCanBuyLotteries)
-	r.GET("/MyLottery/:userID", res.GetMyLottery)
+	r.GET("/AllLotteryResult/", res.GETAllLotteryResults)
 	r.GET("/lotteriesSearch/:lotterynumber", res.GetlotteriesSearch)
 	r.GET("/CheckLotteryResult/:lotteryResult", res.GetCheckLotteryResult)
-	r.GET("/AllLotteryResult/", res.GETAllLotteryResults)
+	r.GET("/profile", middleware.AuthenticateJWT(JWTKey), res.GetProfile)
+	r.GET("/MyLottery", middleware.AuthenticateJWT(JWTKey), res.GetMyLottery)
 
 	// Admin
 	r.GET("/users", res.GetUsers)
 
 	r.POST("/register", req.Register)
 	r.POST("/login", req.Login)
-	r.POST("/buylottery/:userID", req.BuyLottery)
-	r.POST("/cashin/:userID", req.CashIn)
+	r.POST("/buylottery", middleware.AuthenticateJWT(JWTKey), req.BuyLottery)
+	r.POST("/cashin", middleware.AuthenticateJWT(JWTKey), req.CashIn)
 
 	// Admin
-	r.POST("/randomlotteryResult/:userID", req.RandomResult)
-	r.POST("/resetSystem/:userID", req.ResetSystem)
+	// r.POST("/randomlotteryResult/:userID", req.RandomResult)
+	// r.POST("/resetSystem/:userID", req.ResetSystem)
+	r.POST("/randomlotteryResult", middleware.AuthenticateJWT(JWTKey), req.RandomResult)
+	r.POST("/resetSystem", middleware.AuthenticateJWT(JWTKey), req.ResetSystem)
 
 	r.Run(":8090")
 

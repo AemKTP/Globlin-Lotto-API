@@ -3,7 +3,6 @@ package res
 import (
 	"log"
 	"net/http"
-	"strconv"
 
 	"github.com/AemKTP/Globlin-Lotto-API/db"
 	"github.com/AemKTP/Globlin-Lotto-API/models"
@@ -13,17 +12,16 @@ import (
 func GetProfile(c *gin.Context) {
 	var customers []models.GetDataCustomer
 
-	// ดึง userID จาก path parameter
-	userIDParam := c.Param("userID")
-	userID, err := strconv.Atoi(userIDParam) // แปลง userID เป็น int
-
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid userID"})
+	// ดึง userID จาก context แทน
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID not found in token"})
 		return
 	}
+
 	query := `SELECT userID, userName, userBalance
-			  FROM users
-			  WHERE userID = ?`
+              FROM users
+              WHERE userID = ?`
 	rows, err := db.DB.Query(query, userID)
 	if err != nil {
 		log.Printf("Error querying database: %v", err)
