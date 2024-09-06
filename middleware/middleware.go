@@ -77,4 +77,30 @@ func AuthenticateJWT(JWTKey []byte) gin.HandlerFunc {
 		c.Set("userName", claims.UserName)
 		c.Next()
 	}
+
+}
+
+// GetUserIDFromContext เป็นฟังก์ชันที่ดึง userID จาก context และแปลงเป็น int64
+func GetUserIDFromContext(c *gin.Context) (int64, error) {
+	// ดึง userID จาก context
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID not found in token"})
+		return 0, gin.Error{
+			Err:  gin.Error{Err: nil, Meta: "User ID not found in token"},
+			Type: gin.ErrorTypePublic,
+		}
+	}
+
+	// แปลง userID เป็น int64
+	userIDInt, ok := userID.(int64)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "User ID type assertion failed"})
+		return 0, gin.Error{
+			Err:  gin.Error{Err: nil, Meta: "User ID type assertion failed"},
+			Type: gin.ErrorTypePublic,
+		}
+	}
+
+	return userIDInt, nil
 }

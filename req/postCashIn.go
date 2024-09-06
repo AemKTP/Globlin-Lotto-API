@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/AemKTP/Globlin-Lotto-API/db"
+	"github.com/AemKTP/Globlin-Lotto-API/middleware"
 	"github.com/AemKTP/Globlin-Lotto-API/models"
 	"github.com/gin-gonic/gin"
 )
@@ -14,17 +15,10 @@ import (
 func CashIn(c *gin.Context) {
 	var lottery models.GetLottery
 
-	// ดึง userID จาก context
-	userID, exists := c.Get("userID")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID not found in token"})
-		return
-	}
-
-	// แปลง userID เป็น int64
-	userIDInt, ok := userID.(int64)
-	if !ok {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "User ID type assertion failed"})
+	// ดึง userID จาก context โดยใช้ฟังก์ชัน GetUserIDFromContext
+	userIDInt, err := middleware.GetUserIDFromContext(c)
+	if err != nil {
+		// ถ้ามี error ก็จะทำการ return error จาก GetUserIDFromContext
 		return
 	}
 
@@ -37,7 +31,7 @@ func CashIn(c *gin.Context) {
 	// หา lotteryID จาก lotteryNumber ที่ส่งมาจาก body
 	var lotteryID int
 	queryLottery := `SELECT lotteryID FROM lottery WHERE lotteryNumber = ?`
-	err := db.DB.QueryRow(queryLottery, lottery.LotteryNumber).Scan(&lotteryID)
+	err = db.DB.QueryRow(queryLottery, lottery.LotteryNumber).Scan(&lotteryID)
 	if err != nil {
 		log.Printf("Error finding lotteryID: %v", err)
 		c.JSON(http.StatusNotFound, gin.H{"error": "Lottery number not found"})

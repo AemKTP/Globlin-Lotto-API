@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/AemKTP/Globlin-Lotto-API/db"
+	"github.com/AemKTP/Globlin-Lotto-API/middleware"
 	"github.com/AemKTP/Globlin-Lotto-API/models"
 	"github.com/gin-gonic/gin"
 )
@@ -12,17 +13,17 @@ import (
 func GetProfile(c *gin.Context) {
 	var customers []models.GetDataCustomer
 
-	// ดึง userID จาก context แทน
-	userID, exists := c.Get("userID")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID not found in token"})
+	// ดึง userID จาก context โดยใช้ฟังก์ชัน GetUserIDFromContext
+	userIDInt, err := middleware.GetUserIDFromContext(c)
+	if err != nil {
+		// ถ้ามี error ก็จะทำการ return error จาก GetUserIDFromContext
 		return
 	}
 
 	query := `SELECT userID, userName, userBalance
               FROM users
               WHERE userID = ?`
-	rows, err := db.DB.Query(query, userID)
+	rows, err := db.DB.Query(query, userIDInt)
 	if err != nil {
 		log.Printf("Error querying database: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/AemKTP/Globlin-Lotto-API/db"
+	"github.com/AemKTP/Globlin-Lotto-API/middleware"
 	"github.com/AemKTP/Globlin-Lotto-API/models"
 	"github.com/gin-gonic/gin"
 )
@@ -17,23 +18,16 @@ import (
 func RandomResult(c *gin.Context) {
 	const NumbersResult = 5
 
-	// ดึง userID จาก context
-	userID, exists := c.Get("userID")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID not found in token"})
-		return
-	}
-
-	// แปลง userID เป็น int64
-	userIDInt, ok := userID.(int64)
-	if !ok {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "User ID type assertion failed"})
+	// ดึง userID จาก context โดยใช้ฟังก์ชัน GetUserIDFromContext
+	userIDInt, err := middleware.GetUserIDFromContext(c)
+	if err != nil {
+		// ถ้ามี error ก็จะทำการ return error จาก GetUserIDFromContext
 		return
 	}
 
 	var userType int
 	queryUser := `SELECT userType FROM users WHERE userID = ?`
-	err := db.DB.QueryRow(queryUser, userIDInt).Scan(&userType)
+	err = db.DB.QueryRow(queryUser, userIDInt).Scan(&userType)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
