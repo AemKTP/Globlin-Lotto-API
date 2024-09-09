@@ -26,39 +26,39 @@ func init() {
 }
 
 func main() {
+	// เริ่มต้นเชื่อมต่อฐานข้อมูล
 	db.Init()
 
+	// ตั้งค่า Gin Router
 	r := gin.Default()
 
-	// ใช้ middleware สำหรับเส้นทางที่ต้องการ JWT กรณีที่มี Path ที่อยากให้ใช้ JWT
-	// authorized := r.Group("", middleware.AuthenticateJWT(JWTKey))
-	// {
-	// r.GET("/profile/:userID", res.GetProfile)
-	// 	// เพิ่มเส้นทางอื่นๆ ที่ต้องการ JWT ที่นี่
-	// }
+	// กลุ่มเส้นทางที่ต้องการ JWT Authentication
+	authorized := r.Group("", middleware.AuthenticateJWT(JWTKey))
+	{
+		authorized.GET("/profile", res.GetProfile)
+		authorized.GET("/MyLottery", res.GetMyLottery)
+		authorized.POST("/buylottery", req.BuyLottery)
+		authorized.POST("/cashin", req.CashIn)
 
+		// Admin Routes
+		authorized.POST("/randomlotteryResult", req.RandomResult)
+		authorized.POST("/resetSystem", req.ResetSystem)
+	}
+
+	// เส้นทางที่ไม่ต้องการ JWT Authentication
 	r.GET("/lotteries", res.GetLotterys)
 	r.GET("/canbuylotteries", res.GetCanBuyLotteries)
 	r.GET("/AllLotteryResult/", res.GETAllLotteryResults)
 	r.GET("/lotteriesSearch/:lotterynumber", res.GetlotteriesSearch)
 	r.GET("/CheckLotteryResult/:lotteryResult", res.GetCheckLotteryResult)
-	r.GET("/profile", middleware.AuthenticateJWT(JWTKey), res.GetProfile)
-	r.GET("/MyLottery", middleware.AuthenticateJWT(JWTKey), res.GetMyLottery)
 
-	// Admin
+	// เส้นทางที่เกี่ยวกับ Admin ที่อาจจะไม่ได้ใช้ JWT Authentication
 	r.GET("/users", res.GetUsers)
 
+	// เส้นทางสำหรับการลงทะเบียนและล็อกอิน
 	r.POST("/register", req.Register)
 	r.POST("/login", req.Login)
-	r.POST("/buylottery", middleware.AuthenticateJWT(JWTKey), req.BuyLottery)
-	r.POST("/cashin", middleware.AuthenticateJWT(JWTKey), req.CashIn)
 
-	// Admin
-	// r.POST("/randomlotteryResult/:userID", req.RandomResult)
-	// r.POST("/resetSystem/:userID", req.ResetSystem)
-	r.POST("/randomlotteryResult", middleware.AuthenticateJWT(JWTKey), req.RandomResult)
-	r.POST("/resetSystem", middleware.AuthenticateJWT(JWTKey), req.ResetSystem)
-
+	// รันเซิร์ฟเวอร์บนพอร์ต 8090
 	r.Run(":8090")
-
 }
